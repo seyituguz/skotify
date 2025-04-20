@@ -2,98 +2,71 @@
 const express = require('express');
 const axios = require('axios');
 const qs = require('qs');
-const cors = require('cors');
-require('dotenv').config();
+const dotenv = require('dotenv');
+dotenv.config();
 
 const app = express();
-const port = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3000;
 
-app.use(cors());
+const CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
+const CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
+const REDIRECT_URI = process.env.SPOTIFY_REDIRECT_URI;
 
-let access_token = '';
-let refresh_token = '';
+app.get('/', (req, res) => {
+  res.send(`<a href="/login">Login with Spotify</a>`);
+});
 
-// 1. Kullanıcıyı Spotify'a yönlendir
 app.get('/login', (req, res) => {
-  const redirect_uri = process.env.SPOTIFY_REDIRECT_URI;
-  const client_id = process.env.SPOTIFY_CLIENT_ID;
-  const scope = 'user-read-currently-playing user-read-playback-state';
-
+  const scope = 'user-read-currently-playing';
   const authUrl =
     'https://accounts.spotify.com/authorize?' +
-    qs.stringify({
+    new URLSearchParams({
       response_type: 'code',
-      client_id,
-      scope,
-      redirect_uri,
-    });
+      client_id: CLIENT_ID,
+      scope: scope,
+      redirect_uri: REDIRECT_URI,
+    }).toString();
 
   res.redirect(authUrl);
 });
 
-// 2. Spotify callback -> token al
 app.get('/callback', async (req, res) => {
   const code = req.query.code || null;
-  const authOptions = {
-    method: 'post',
-    url: 'https://accounts.spotify.com/api/token',
-    data: qs.stringify({
+
+  const response = await axios.post(
+    'https://accounts.spotify.com/api/token',
+    qs.stringify({
       code,
-      redirect_uri: process.env.SPOTIFY_REDIRECT_URI,
+      redirect_uri: REDIRECT_URI,
       grant_type: 'authorization_code',
     }),
-    headers: {
-      Authorization:
-        'Basic ' +
-        Buffer.from(
-          process.env.SPOTIFY_CLIENT_ID + ':' + process.env.SPOTIFY_CLIENT_SECRET
-        ).toString('base64'),
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-  };
-
-  try {
-    const response = await axios(authOptions);
-    access_token = response.data.access_token;
-    refresh_token = response.data.refresh_token;
-    res.send('Spotify bağlantısı başarılı! Şimdi /currently-playing adresine gidebilirsin.');
-  } catch (error) {
-    console.error(error);
-    res.send('Token alınamadı.');
-  }
-});
-
-// 3. ESP için veri sağla
-app.get('/currently-playing', async (req, res) => {
-  if (!access_token) return res.status(401).send('Spotify oturumu yok. /login ile giriş yap.');
-
-  try {
-    const response = await axios.get('https://api.spotify.com/v1/me/player/currently-playing', {
+    {
       headers: {
-        Authorization: `Bearer ${access_token}`,
+        'Authorization':
+          'Basic ' +
+          Buffer.from(CLIENT_ID + ':' + CLIENT_SECRET).toString('base64'),
+        'Content-Type': 'application/x-www-form-urlencoded',
       },
+    }
+  );
+
+  const access_token = response.data.access_token;
+
+  res.redirect(`/currently-playing?access_token=${access_token}`);
+});
+
+app.get('/currently-playing', async (req, res) => {
+  const token = req.query.access_token;
+  try {
+    const data = await axios.get('https://api.spotify.com/v1/me/player/currently-playing', {
+      headers: { Authorization: 'Bearer ' + token },
     });
-
-    if (response.status === 204) return res.json({ playing: false });
-
-    const song = response.data;
-    const result = {
-      name: song.item.name,
-      artist: song.item.artists.map((a) => a.name).join(', '),
-      album: song.item.album.name,
-      image: song.item.album.images[0].url,
-      duration_ms: song.item.duration_ms,
-      progress_ms: song.progress_ms,
-      playing: song.is_playing,
-    };
-
-    res.json(result);
-  } catch (error) {
-    console.error(error);
-    res.status(500).send('Spotify verisi alınamadı');
+    res.json(data.data);
+  } catch (err) {
+    res.status(500).send('Spotify data fetch error.');
   }
 });
 
-app.listen(port, () => {
-  console.log(`Spotify Proxy çalışıyor: http://localhost:${port}`);
+app.listen(PORT, () => {
+  console.log(`Server listening on port ${PORT}`);
 });

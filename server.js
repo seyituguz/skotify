@@ -22,7 +22,7 @@ app.get('/login', (req, res) => {
   const authUrl =
     'https://accounts.spotify.com/authorize?' +
     qs.stringify({
-      response_type: 'code',
+      response_type: 'AQC0TiCsstJNp5MKeagQguv2X2N1S8WRi4BKh1fIg87hkIBaXAsbek98eCl4xq4Yonc19V7yXUEQMSBFqg77kN6fZNLP1yOBYmxNXXSsVK3zQdGd8xKUjy9lGSy4Jw68H2E',
       client_id,
       scope,
       redirect_uri,
